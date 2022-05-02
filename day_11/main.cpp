@@ -2,10 +2,11 @@
 #include <vector>
 #include <fstream>
 #include <string>
+#include <algorithm>
 
 using namespace std;
 
-#define DEBUG 1
+#define DEBUG 0
 
 typedef struct octopus
 {
@@ -55,6 +56,14 @@ typedef struct octopuses
     {
         if (row < 0 || row > 9 || col < 0 || col > 9)
             return false;
+        return true;
+    }
+    
+    bool are_all_zero()
+    {
+        for (auto &oc : this->octopuses_vec)
+            if (oc.energy != 0)
+                return false;
         return true;
     }
     
@@ -139,10 +148,11 @@ int main()
     octopuses_t octopuses_list(values);
     
     uint64_t flashes {};
-    for (int i = 0; i < 100; ++i)
+    for (int i = 1; i < 1000; ++i)
     {
         flashes += octopuses_list.step();
-        //octopuses_list.print();
+        if (octopuses_list.are_all_zero())
+            cout << "Iteration: " << i << endl;
     }
     
     cout << flashes << endl;
