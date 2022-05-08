@@ -8,59 +8,11 @@ using namespace std;
 
 #define DEBUG 0
 
-template<typename T>
-struct c_stack
-{
-    T* elements {};
-    uint64_t head {}, size {};
-    bool empty {true};
-    
-    c_stack()
-    {
-        elements = new T[2];
-        size = 2;
-    }
-    
-    virtual ~c_stack()
-    {
-        delete [] elements;
-    }
-    
-    void push(const T element)
-    {
-        if (head >= size)
-            expand();
-        elements[head++] = element;
-        if (empty)
-            empty = false;
-    }
-    
-    T pop()
-    {
-        if (head > 0)
-            return elements[head--];
-        else if (head == 0 && !empty)
-        {
-            empty = true;
-            return elements[0];
-        }
-    }
-    
-    private:
-        void expand()
-        {
-            T *new_elements = new T[size << 1];
-            memcpy(new_elements, elements, sizeof(T) * size);
-            delete elements;
-            elements = new_elements;
-        }
-};
-
-
 struct node
 {
     string name {};
-    bool is_big_cave {}, visited {false};
+    bool is_big_cave {};
+    uint8_t num_visited {0};
     set<node *> connected_nodes {};
     
     explicit node(const string &name) : name(name)
@@ -72,7 +24,7 @@ struct node
     {
         name = other.name;
         is_big_cave = other.is_big_cave;
-        visited = other.visited;
+        num_visited = other.num_visited;
     }
     
 };
@@ -80,6 +32,7 @@ struct node
 struct graph_t
 {
     vector<node *> nodes {};
+    bool has_visited_small_twice {false};
         
     virtual ~graph_t()
     {
@@ -91,11 +44,12 @@ struct graph_t
     
     graph_t(const graph_t &other)
     {
+        has_visited_small_twice = other.has_visited_small_twice;
         nodes.reserve(other.nodes.size());
         for (node *node_ptr : other.nodes)
         {
             node *new_node = get_node(node_ptr->name);
-            new_node->visited = node_ptr->visited;
+            new_node->num_visited = node_ptr->num_visited;
             new_node->is_big_cave = node_ptr->is_big_cave;
             
             for (node *connected : node_ptr->connected_nodes)
@@ -128,20 +82,32 @@ struct graph_t
 
 };
 
-uint64_t get_number_of_paths(graph_t graph, const string &start_node_name, const string &end_node_name)
+uint64_t get_number_of_paths(graph_t graph, const string &start_node_name, const string &end_node_name, string path)
 {
     uint64_t count {};
     
+    if (DEBUG)
+        path += "," + start_node_name; //Extend path
+    
     if (start_node_name == end_node_name)
+    {
+        if (DEBUG)
+        {
+            path = path.substr(1, path.length());
+            cout << path << "\n";
+        }
         return 1; //Found end node
+    }
     
     node *start_node = graph.get_node(start_node_name);
     
-    start_node->visited = true;
+    ++start_node->num_visited;
+    if (!start_node->is_big_cave && start_node->num_visited == 2)
+        graph.has_visited_small_twice = true;
     
     for (node *node_ptr : start_node->connected_nodes)
-        if (node_ptr->is_big_cave || !node_ptr->visited)
-            count += get_number_of_paths(graph, node_ptr->name, end_node_name);
+        if (node_ptr->is_big_cave || node_ptr->num_visited == 0 || (!graph.has_visited_small_twice && node_ptr->name != "start" && node_ptr->name != "end"))
+            count += get_number_of_paths(graph, node_ptr->name, end_node_name, path);
     
     return count;
 }
@@ -168,8 +134,10 @@ int main()
     }
     file.close();
     
+    cout << "File read" << endl;
+    
     //Handling the data
-    cout << get_number_of_paths(caves, "start", "end") << endl;
+    cout << get_number_of_paths(caves, "start", "end", "") << endl;
     
     return EXIT_SUCCESS;
 }
