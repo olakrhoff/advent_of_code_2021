@@ -1,142 +1,117 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <set>
+#include <map>
 
 using namespace std;
 
 #define DEBUG 0
 
-struct coord_t
-{
-    uint32_t x {}, y {};
-    
-    coord_t(uint32_t x, uint32_t y) : x(x), y(y)
-    {}
-    
-    bool operator==(const coord_t &rhs) const
-    {
-        return x == rhs.x &&
-               y == rhs.y;
-    }
-    
-    bool operator!=(const coord_t &rhs) const
-    {
-        return !(rhs == *this);
-    }
-    
-    bool operator<(const coord_t &rhs) const
-    {
-        if (x != rhs.x)
-            return x < rhs.x;
-        return y < rhs.y;
-    }
-    
-    bool operator>(const coord_t &rhs) const
-    {
-        return rhs < *this;
-    }
-    
-    bool operator<=(const coord_t &rhs) const
-    {
-        return !(rhs < *this);
-    }
-    
-    bool operator>=(const coord_t &rhs) const
-    {
-        return !(*this < rhs);
-    }
-    
-    friend ostream &operator<<(ostream &os, const coord_t &coord)
-    {
-        os << "(" << coord.x << "," << coord.y << ")";
-        return os;
-    }
-};
+typedef map<char, uint64_t> cache_result_t;
+typedef pair<pair<char, char>, uint8_t> cache_key_t;
+typedef map<cache_key_t, cache_result_t> dynamic_cache_t;
 
-struct transparant_paper_t
+
+void do_step(string &poly, const map<string, string> &insertion_rules)
 {
-    static const bool X_AXIS = true;
-    static const bool Y_AXIS = false;
-    
-    set<coord_t> dots {};
-    
-    transparant_paper_t() = default;
-    
-    void add_dot(const coord_t &&dot)
+    string new_poly {*poly.begin()}, first {}, second {new_poly};
+    for (auto itr = ++poly.begin(); itr != poly.end(); ++itr)
     {
-        dots.insert(dot);
+        first = second;
+        second = *itr;
+        
+        new_poly += insertion_rules.find(first + second)->second;
+        new_poly += second;
     }
+    poly = new_poly;
+}
+
+cache_key_t get_key(const string &poly, uint8_t iterations)
+{
+    return  {pair<char, char>(poly.at(0), poly.at(1)), iterations };
+}
+
+void add_result(cache_result_t &results, char key, uint64_t val)
+{
+    auto res = results.find(key);
+    if (res == results.end())
+        results.insert_or_assign(key, val);
+    else
+        res->second += val;
+}
+
+void add_to_dynamic_cache(dynamic_cache_t &cache, cache_key_t &&key, cache_result_t &results)
+{
+    auto res = cache.find(key);
+    if (res == cache.end())
+        cache.insert_or_assign(key, results);
+}
+
+map<char, uint64_t> find_occurrences(const string &poly, const map<string, string> &insertion_rules, dynamic_cache_t &cache, uint16_t iterations)
+{
+    cache_result_t  results {};
     
-    //Returns left and right or top and bottom papers.
-    tuple<transparant_paper_t> split(bool axis, uint32_t at)
+    if (iterations <= 0)
+        return results;
+    
+    auto res = cache.find(get_key(poly, iterations));
+    if (res != cache.end())
     {
-        return tuple<transparant_paper_t>();
+        for (auto val : res->second)
+            add_result(results, val.first, val.second);
+        return results;
     }
+    //Not in cache
+    string insertion = insertion_rules.find(poly)->second;
+    string left_poly = poly.at(0) + insertion;
+    string right_poly = insertion + poly.at(1);
+    auto left = find_occurrences(left_poly, insertion_rules, cache, iterations - 1);
+    add_to_dynamic_cache(cache, get_key(left_poly, iterations - 1), left);
+    for (auto val : left)
+        add_result(results, val.first, val.second);
     
-    void fold(bool axis, uint32_t at)
+    add_result(results, insertion.at(0), 1);
+    
+    auto right = find_occurrences(right_poly, insertion_rules, cache, iterations - 1);
+    add_to_dynamic_cache(cache, get_key(right_poly, iterations - 1), left);
+    for (auto val : right)
+        add_result(results, val.first, val.second);
+    
+    add_to_dynamic_cache(cache, get_key(poly, iterations), results);
+    return results;
+}
+
+uint64_t solve_problem(string &poly, const map<string, string> &insertion_rules, uint8_t iterations)
+{
+    dynamic_cache_t lookup_table {};
+    map<char, uint64_t> results {};
+    for (int i = 0; i < poly.length() - 1; ++i)
     {
-        set<coord_t> new_dots {};
-        if (axis == X_AXIS)
-        {
-            for (auto dot : dots)
-            {
-                if (dot.x < at)
-                    new_dots.insert(dot);
-                else if (dot.x > at)
-                    //new_dots.insert(coord_t(at - (dot.x - at), dot.y));
-                    new_dots.insert(coord_t((at << 1) - dot.x, dot.y));
-            }
-        }
+        string key = poly.substr(i, 2);
+        auto new_result = find_occurrences(key, insertion_rules, lookup_table, iterations);
+        for (auto res : new_result)
+            add_result(results, res.first, res.second); //Insert all the new results
+    }
+    for (char c : poly)
+    {
+        auto res = results.find(c);
+        if (res == results.end())
+            results.insert_or_assign(c, 1);
         else
-        {
-            for (auto dot : dots)
-            {
-                if (dot.y < at)
-                    new_dots.insert(dot);
-                else if (dot.y > at)
-                    //new_dots.insert(coord_t(dot.x, at - (dot.y - at)));
-                    new_dots.insert(coord_t(dot.x, (at << 1) - dot.y));
-            }
-        }
-        
-        dots = new_dots;
+            ++res->second;
     }
     
-    uint32_t max_x() const
+    uint64_t min {LONG_MAX}, min_index {}, max {0}, max_index {};
+    for (auto val : results)
     {
-        return std::max_element(dots.begin(), dots.end())->x;
+        if (val.second < min)
+            min = val.second;
+        if (val.second > max)
+            max = val.second;
     }
     
-    
-    uint32_t max_y() const
-    {
-        return std::max_element(dots.begin(), dots.end(), [] (const coord_t lhs, const coord_t rhs)
-        {
-            return lhs.y < rhs.y;
-        })->y;
-    }
-    
-    friend ostream &operator<<(ostream &os, const transparant_paper_t &paper)
-    {
-        cout << "y: " << paper.max_y() << endl;
-        cout << "x: " << paper.max_x() << endl;
-        for (uint32_t y = 0; y <= paper.max_y(); ++y)
-        {
-            for (uint32_t x = 0; x <= paper.max_x(); ++x)
-            {
-                if (paper.dots.contains(coord_t(x, y)))
-                    os << "#";
-                else
-                    os << ".";
-            }
-            os << "\n";
-        }
-        
-        return os;
-    }
-};
-
+    return max - min;
+}
 
 int main()
 {
@@ -150,47 +125,64 @@ int main()
     if (!file.is_open())
         return EXIT_FAILURE;
     
-    transparant_paper_t paper;
-    
-    string line {};
+    map<string, string> insertion_map {};
+    string template_polymer {};
+    file >> template_polymer;
+    string key {}, val {}, temp {};
     while (!file.eof())
     {
-        file >> line;
-        if (line == "fold")
-            break; //Folding instructions are coming
-        uint8_t comma_index = line.find(',');
-        string first = line.substr(0, comma_index);
-        string second = line.substr(++comma_index, line.length());
-        paper.add_dot(coord_t(stoi(first), stoi(second)));
-        line.clear(); //empty the line buffer
+        file >> key;
+        file >> temp;
+        file >> val;
+        
+        insertion_map.insert_or_assign(key, val);
+        
+        key.clear();
+        temp.clear();
+        val.clear();
     }
-    
-    
-    while (!file.eof())
-    {
-        file >> line;
-        if (line.find('=') == -1)
-            continue;
-        string number = line.substr(2, line.length());
-        if (line[0] == 'x')
-        {
-            paper.fold(transparant_paper_t::X_AXIS, stoi(number));
-            //break;
-        }
-        else //y
-        {
-            paper.fold(transparant_paper_t::Y_AXIS, stoi(number));
-            //break;
-        }
-        line.clear(); //empty the line buffer
-    }
-    
     file.close();
+   
+    /* Puzzle 1
+    for (int i = 0; i < 10; ++i)
+    {
+        do_step(template_polymer, insertion_map);
+        cout << "Step: " << i << "\n";
+        //cout << template_polymer << "\n";
+    }
     
-    cout << paper.dots.size() << "\n";
+    auto max_val = std::max_element(insertion_map.begin(), insertion_map.end(), [](const pair<string, string> &a, const pair<string, string> &b)
+    {
+        return a.second < b.second;
+    });
     
-    cout << paper << "\n";
+    cout << max_val->second << "\n";
+    uint32_t size = *max_val->second.begin() + 1;
+    uint32_t *results = new uint32_t[size] {};
     
+    for (char &itr : template_polymer)
+        ++results[itr];
     
+    uint32_t min {results[size - 1]}, min_index {}, max {results[size - 1]}, max_index {};
+    for (uint32_t i = 0; i < size; ++i)
+    {
+        if (results[i] < min && results[i] != 0)
+        {
+            min = results[i];
+            min_index = i;
+        }
+        if (results[i] > max)
+        {
+            max = results[i];
+            max_index = i;
+        }
+    }
+    
+    delete[] results;
+    
+    cout << "Answer: " << max - min << "\n";
+    */
+    
+    cout << solve_problem(template_polymer, insertion_map, 40) << "\n";
     return EXIT_SUCCESS;
 }
