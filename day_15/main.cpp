@@ -1,116 +1,143 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <map>
 
 using namespace std;
 
 #define DEBUG 0
 
-typedef map<char, uint64_t> cache_result_t;
-typedef pair<pair<char, char>, uint8_t> cache_key_t;
-typedef map<cache_key_t, cache_result_t> dynamic_cache_t;
-
-
-void do_step(string &poly, const map<string, string> &insertion_rules)
+struct node_t
 {
-    string new_poly {*poly.begin()}, first {}, second {new_poly};
-    for (auto itr = ++poly.begin(); itr != poly.end(); ++itr)
+    node_t(uint64_t indexId, uint8_t riskValue) : index_id(indexId), risk_value(riskValue)
+    {}
+    
+    uint64_t index_id {}, smallest_risk_sum {UINT64_MAX};
+    uint8_t risk_value {};
+    vector<node_t *> connected_nodes {};
+    /*
+    bool operator<(const node_t &rhs) const
     {
-        first = second;
-        second = *itr;
+        if (index_id < rhs.index_id)
+            return true;
+        if (rhs.index_id < index_id)
+            return false;
+        if (smallest_risk_sum < rhs.smallest_risk_sum)
+            return true;
+        if (rhs.smallest_risk_sum < smallest_risk_sum)
+            return false;
+        if (risk_value < rhs.risk_value)
+            return true;
+        if (rhs.risk_value < risk_value)
+            return false;
+        return connected_nodes < rhs.connected_nodes;
+    }
+    
+    bool operator>(const node_t &rhs) const
+    {
+        return rhs < *this;
+    }
+    
+    bool operator<=(const node_t &rhs) const
+    {
+        return !(rhs < *this);
+    }
+    
+    bool operator>=(const node_t &rhs) const
+    {
+        return !(*this < rhs);
+    }*/
+};
+
+struct graph_t
+{
+    vector<node_t *> nodes {};
+    
+    virtual ~graph_t()
+    {
+        for (auto &val : nodes)
+            delete val;
+    }
+    
+    void add_node(uint64_t index, uint64_t risk_value)
+    {
+        nodes.emplace_back(new node_t(index, risk_value));
+    }
+    
+    node_t *get_node(uint64_t index)
+    {
+        node_t *node = nodes[index];
+        if (node->index_id != index)
+            exit(5);
+        return node;
+        /*
+        for (auto &val : nodes)
+            if (val->index_id == index)
+                return val;
+        return nullptr;*/
+    }
+    
+    void connect_nodes(uint64_t first_index, uint64_t second_index)
+    {
+        node_t *first = get_node(first_index), *second = get_node(second_index);
+        first->connected_nodes.emplace_back(second);
+        second->connected_nodes.emplace_back(first);
+    }
+    
+    uint16_t find_smallest_risk_path(uint64_t start_index, uint64_t end_index)
+    {
+        node_t *first = get_node(start_index);
+        first->smallest_risk_sum = 0;
         
-        new_poly += insertion_rules.find(first + second)->second;
-        new_poly += second;
+        vector<node_t *> next_nodes {};
+        next_nodes.emplace_back(first);
+        make_heap(next_nodes.begin(), next_nodes.end());
+        
+        while (!next_nodes.empty())
+        {
+            std::sort_heap(next_nodes.begin(), next_nodes.end(), [](const node_t *first, const node_t *second)
+            {
+                return first->smallest_risk_sum < second->smallest_risk_sum;
+            });
+            
+            std::pop_heap(next_nodes.begin(), next_nodes.end());
+            node_t *current_node = next_nodes.back();
+            next_nodes.pop_back();
+            
+            if (current_node->index_id == end_index)
+                return current_node->smallest_risk_sum;
+            
+            
+            for (auto &val : current_node->connected_nodes)
+            {
+                if (val->smallest_risk_sum <= current_node->smallest_risk_sum + val->risk_value)
+                    continue;
+                val->smallest_risk_sum = current_node->smallest_risk_sum + val->risk_value;
+                next_nodes.push_back(val);
+                std::push_heap(next_nodes.begin(), next_nodes.end());
+            }
+        }
+        throw -1;
     }
-    poly = new_poly;
-}
+};
 
-cache_key_t get_key(const string &poly, uint8_t iterations)
+vector<string> increment_grid(const vector<string> &base)
 {
-    return  {pair<char, char>(poly.at(0), poly.at(1)), iterations };
-}
-
-void add_result(cache_result_t &results, char key, uint64_t val)
-{
-    auto res = results.find(key);
-    if (res == results.end())
-        results.insert_or_assign(key, val);
-    else
-        res->second += val;
-}
-
-void add_to_dynamic_cache(dynamic_cache_t &cache, cache_key_t &&key, cache_result_t &results)
-{
-    auto res = cache.find(key);
-    if (res == cache.end())
-        cache.insert_or_assign(key, results);
-}
-
-map<char, uint64_t> find_occurrences(const string &poly, const map<string, string> &insertion_rules, dynamic_cache_t &cache, uint16_t iterations)
-{
-    cache_result_t  results {};
+    vector<string> new_grid {};
     
-    if (iterations <= 0)
-        return results;
-    
-    auto res = cache.find(get_key(poly, iterations));
-    if (res != cache.end())
+    for (auto &row : base)
     {
-        for (auto val : res->second)
-            add_result(results, val.first, val.second);
-        return results;
-    }
-    //Not in cache
-    string insertion = insertion_rules.find(poly)->second;
-    string left_poly = poly.at(0) + insertion;
-    string right_poly = insertion + poly.at(1);
-    auto left = find_occurrences(left_poly, insertion_rules, cache, iterations - 1);
-    add_to_dynamic_cache(cache, get_key(left_poly, iterations - 1), left);
-    for (auto val : left)
-        add_result(results, val.first, val.second);
-    
-    add_result(results, insertion.at(0), 1);
-    
-    auto right = find_occurrences(right_poly, insertion_rules, cache, iterations - 1);
-    add_to_dynamic_cache(cache, get_key(right_poly, iterations - 1), left);
-    for (auto val : right)
-        add_result(results, val.first, val.second);
-    
-    add_to_dynamic_cache(cache, get_key(poly, iterations), results);
-    return results;
-}
-
-uint64_t solve_problem(string &poly, const map<string, string> &insertion_rules, uint8_t iterations)
-{
-    dynamic_cache_t lookup_table {};
-    map<char, uint64_t> results {};
-    for (int i = 0; i < poly.length() - 1; ++i)
-    {
-        string key = poly.substr(i, 2);
-        auto new_result = find_occurrences(key, insertion_rules, lookup_table, iterations);
-        for (auto res : new_result)
-            add_result(results, res.first, res.second); //Insert all the new results
-    }
-    for (char c : poly)
-    {
-        auto res = results.find(c);
-        if (res == results.end())
-            results.insert_or_assign(c, 1);
-        else
-            ++res->second;
+        string inc_row {};
+        for (char col : row)
+        {
+            if (col == '9')
+                inc_row += '1';
+            else
+                inc_row += (char)(col + 1);
+        }
+        new_grid.emplace_back(inc_row);
     }
     
-    uint64_t min {LONG_MAX}, min_index {}, max {0}, max_index {};
-    for (auto val : results)
-    {
-        if (val.second < min)
-            min = val.second;
-        if (val.second > max)
-            max = val.second;
-    }
-    
-    return max - min;
+    return new_grid;
 }
 
 int main()
@@ -125,64 +152,81 @@ int main()
     if (!file.is_open())
         return EXIT_FAILURE;
     
-    map<string, string> insertion_map {};
-    string template_polymer {};
-    file >> template_polymer;
-    string key {}, val {}, temp {};
+    
+    vector<string> rows {};
+    string temp {};
     while (!file.eof())
     {
-        file >> key;
         file >> temp;
-        file >> val;
-        
-        insertion_map.insert_or_assign(key, val);
-        
-        key.clear();
-        temp.clear();
-        val.clear();
+        rows.emplace_back(temp);
     }
     file.close();
-   
-    /* Puzzle 1
-    for (int i = 0; i < 10; ++i)
+    
+    //Part two
+    //Expand the map
+    vector<vector<string>> grids {};
+    grids.emplace_back(rows);
+    for (int i = 0; i < 4; ++i)
     {
-        do_step(template_polymer, insertion_map);
-        cout << "Step: " << i << "\n";
-        //cout << template_polymer << "\n";
+        grids.emplace_back(increment_grid(grids.at(i)));
+    }
+    //Create on long row
+    vector<string> whole_row {};
+    
+    for (int row = 0; row < grids.at(0).size(); ++row)
+    {
+        string new_row {};
+        for (int col = 0; col < grids.size(); ++col)
+        {
+            new_row += grids.at(col).at(row);
+        }
+        whole_row.emplace_back(new_row);
     }
     
-    auto max_val = std::max_element(insertion_map.begin(), insertion_map.end(), [](const pair<string, string> &a, const pair<string, string> &b)
+    grids.clear();
+    grids.emplace_back(whole_row);
+    for (int i = 0; i < 4; ++i)
     {
-        return a.second < b.second;
-    });
+        grids.emplace_back(increment_grid(grids.at(i)));
+    }
     
-    cout << max_val->second << "\n";
-    uint32_t size = *max_val->second.begin() + 1;
-    uint32_t *results = new uint32_t[size] {};
+    vector<string> big_grid {};
     
-    for (char &itr : template_polymer)
-        ++results[itr];
+    for (auto &section : grids)
+        for (string &row : section)
+            big_grid.emplace_back(row);
     
-    uint32_t min {results[size - 1]}, min_index {}, max {results[size - 1]}, max_index {};
-    for (uint32_t i = 0; i < size; ++i)
-    {
-        if (results[i] < min && results[i] != 0)
+    
+    graph_t grid;
+    
+    //for (int row = 0; row < rows.size(); ++row)
+    for (uint64_t row = 0; row < big_grid.size(); ++row)
+        //for (int col = 0; col < rows.at(row).size(); ++col)
+        for (uint64_t col = 0; col < big_grid.at(row).size(); ++col)
+            //grid.add_node(row * rows.size() + col, rows.at(row).at(col) - '0');
+            grid.add_node(row * big_grid.size() + col, big_grid.at(row).at(col) - '0');
+    
+    //Connect the grid
+    //for (int row = 0; row < rows.size(); ++row)
+    for (uint64_t row = 0; row < big_grid.size(); ++row)
+    {   //for (int col = 0; col < rows.at(row).size(); ++col)
+        for (uint64_t col = 0; col < big_grid.at(row).size() - 1; ++col)
         {
-            min = results[i];
-            min_index = i;
-        }
-        if (results[i] > max)
-        {
-            max = results[i];
-            max_index = i;
+            /*
+            if (col < rows.at(row).size() - 1)
+                grid.connect_nodes(row * rows.size() + col, row * rows.size() + col + 1);
+            if (row < rows.size() - 1)
+                grid.connect_nodes(row * rows.size() + col, (row + 1) * rows.size() + col);
+            */
+            if (col < big_grid.at(row).size() - 1)
+                grid.connect_nodes(row * big_grid.size() + col, row * big_grid.size() + col + 1);
+            if (row < big_grid.size() - 1)
+                grid.connect_nodes(row * big_grid.size() + col, (row + 1) * big_grid.size() + col);
         }
     }
     
-    delete[] results;
-    
-    cout << "Answer: " << max - min << "\n";
-    */
-    
-    cout << solve_problem(template_polymer, insertion_map, 40) << "\n";
+    //cout << grid.find_smallest_risk_path(0, rows.size() * rows.at(0).size() - 1) << "\n";
+    cout << grid.find_smallest_risk_path(0, big_grid.size() * big_grid.at(0).size() - 1) << "\n";
+        
     return EXIT_SUCCESS;
 }
