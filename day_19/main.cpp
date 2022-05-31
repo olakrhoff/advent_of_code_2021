@@ -6,16 +6,15 @@
 
 using namespace std;
 
-#define DEBUG 1
+#define DEBUG 0
 
 struct coord_t
 {
-    int16_t x {}, y {}, z {};
+    int32_t x {}, y {}, z {};
     
-    coord_t()
-    {}
+    coord_t() = default;
     
-    coord_t(int16_t x, int16_t y, int16_t z) : x(x), y(y), z(z)
+    coord_t(int32_t x, int32_t y, int32_t z) : x(x), y(y), z(z)
     {}
     
     explicit coord_t(const string &values)
@@ -25,9 +24,9 @@ struct coord_t
                                         values.find_last_of(',') - x_string.length() - 1);
         string z_string = values.substr(values.find_last_of(',') + 1);
         
-        x = (int16_t) stoi(x_string);
-        y = (int16_t) stoi(y_string);
-        z = (int16_t) stoi(z_string);
+        x = (int32_t) stoi(x_string);
+        y = (int32_t) stoi(y_string);
+        z = (int32_t) stoi(z_string);
     }
     
     bool operator<(const coord_t &rhs) const
@@ -128,7 +127,7 @@ struct cube_t
             F, R, U, L, D, B
         } pos;
     public:
-        coord_t scanner {};
+        vector<coord_t> scanners {1};
         set<coord_t> sensors {};
     
     public:
@@ -187,8 +186,9 @@ struct cube_t
                         //fixed_sensor + diff = sensor
                         //diff = sensor - fixed_sensor
                         coord_t diff = sensor - fixed_sensor;
-                        cube_orientation.translate(diff, (int8_t)i);
-                        
+                        cube_orientation.translate(diff, 0);
+                        if (fixed_sensor == coord_t(-618, -824, -621) && diff == coord_t(-68, 1246, 43))
+                            cout << "Should match: " << diff << endl;
                         uint8_t overlapping_sensors {};
                         auto itr = cube_orientation.sensors.begin();
                         for (int j = 0; j < cube_orientation.sensors.size(); ++j)
@@ -218,6 +218,9 @@ struct cube_t
             
             for (coord_t coord : temp.sensors)
                 sensors.insert(coord);
+            
+            for (coord_t scanner : temp.scanners)
+                scanners.emplace_back(scanner);
         }
     
     private:
@@ -228,12 +231,13 @@ struct cube_t
     
             vector<coord_t> sensors_temp {sensors.begin(), sensors.end()};
             
-            for (coord_t &coord : sensors_temp)
-                coord -= difference;
+            for (coord_t &sensor : sensors_temp)
+                sensor -= difference;
             
             sensors = {sensors_temp.begin(), sensors_temp.end()};
             
-            scanner -= difference;
+            for (coord_t &scanner : scanners)
+                scanner -= difference;
         }
         
         //Rotates the cube clockwise with the axis chosen.
@@ -243,17 +247,20 @@ struct cube_t
             switch (dir)
             {
                 case X:
-                    scanner = coord_t(scanner.x, -scanner.z, scanner.y);
+                    for (coord_t &scanner : scanners)
+                        scanner = coord_t(scanner.x, -scanner.z, scanner.y);
                     for (coord_t &coord : sensors_temp)
                         coord = coord_t(coord.x, -coord.z, coord.y);
                     break;
                 case Y:
-                    scanner = coord_t(scanner.z, scanner.y, -scanner.x);
+                    for (coord_t &scanner : scanners)
+                        scanner = coord_t(scanner.z, scanner.y, -scanner.x);
                     for (coord_t &coord : sensors_temp)
                         coord = coord_t(coord.z, coord.y, -coord.x);
                     break;
                 case Z:
-                    scanner = coord_t(-scanner.y, scanner.x, scanner.z);
+                    for (coord_t &scanner : scanners)
+                        scanner = coord_t(-scanner.y, scanner.x, scanner.z);
                     for (coord_t &coord : sensors_temp)
                         coord = coord_t(-coord.y, coord.x, coord.z);
                     break;
@@ -320,6 +327,7 @@ int main()
     */
     
     cube_t complete_map = pop_front(cubes);
+    double total = cubes.size();
     
     
     while (!cubes.empty())
@@ -331,10 +339,24 @@ int main()
             cubes.emplace_back(next);
             continue;
         }
+        else
+            cout << (total - cubes.size()) * 100 / total << "%" << endl;
         complete_map.combine(next, overlap);
     }
     
     cout << complete_map.sensors.size() << endl;
+    
+    int64_t max_distance {};
+    for (int i = 0; i < complete_map.scanners.size(); ++i)
+        for (int j = i + 1; j < complete_map.scanners.size(); ++j)
+        {
+            coord_t s1 = complete_map.scanners.at(i), s2 = complete_map.scanners.at(j);
+            int64_t temp_max = abs(s1.x - s2.x) + abs(s1.y - s2.y) + abs(s1.z - s2.z);
+            max_distance = temp_max > max_distance ? temp_max : max_distance;
+        }
+        
+    
+    cout << max_distance << endl;
     
     return EXIT_SUCCESS;
 }
